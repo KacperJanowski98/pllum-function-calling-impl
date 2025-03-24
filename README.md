@@ -33,20 +33,14 @@ According to human evaluation of 600 sampled data points, the dataset has a corr
 
 ### Installation
 
-1. Clone this repository:
-```bash
-git clone https://github.com/KacperJanowski98/pllum-function-calling-impl.git
-cd pllum-function-calling-impl
-```
-
-2. Create a virtual environment and install dependencies:
+1. Create a virtual environment and install dependencies:
 ```bash
 uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -e .
 ```
 
-3. Create a `.env` file with your Hugging Face token:
+2. Create a `.env` file with your Hugging Face token:
 ```bash
 cp .env.example .env
 # Edit .env to add your Hugging Face token
