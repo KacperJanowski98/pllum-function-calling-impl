@@ -1,5 +1,3 @@
-"""Utilities for loading and processing the function calling dataset."""
-
 import json
 from typing import Dict, List, Optional, Union
 
@@ -24,15 +22,26 @@ def load_function_calling_dataset(cache_dir: Optional[str] = None) -> Dataset:
     return load_dataset("Salesforce/xlam-function-calling-60k", cache_dir=cache_dir)
 
 
-def parse_json_entry(entry: Dict) -> Dict:
+def parse_json_entry(entry: Union[Dict, str]) -> Dict:
     """Parse JSON strings in the dataset entry into Python objects.
     
     Args:
-        entry: A dataset entry with JSON strings.
+        entry: A dataset entry, either as a dict or a JSON string.
         
     Returns:
         The entry with JSON strings parsed into Python objects.
     """
+    # If entry is a string, try to parse it as JSON first
+    if isinstance(entry, str):
+        try:
+            entry = json.loads(entry)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse entry as JSON: {e}")
+    
+    # Now entry should be a dictionary
+    if not isinstance(entry, dict):
+        raise TypeError(f"Expected entry to be a dict or JSON string, got {type(entry)}")
+    
     parsed_entry = {}
     
     for key, value in entry.items():
@@ -59,13 +68,17 @@ def get_tool_names(dataset: Dataset) -> List[str]:
     tool_names = set()
     
     for entry in dataset["train"]:
-        parsed = parse_json_entry(entry)
-        tools = parsed.get("tools", [])
-        
-        if isinstance(tools, list):
-            for tool in tools:
-                if isinstance(tool, dict) and "name" in tool:
-                    tool_names.add(tool["name"])
+        try:
+            parsed = parse_json_entry(entry)
+            tools = parsed.get("tools", [])
+            
+            if isinstance(tools, list):
+                for tool in tools:
+                    if isinstance(tool, dict) and "name" in tool:
+                        tool_names.add(tool["name"])
+        except (ValueError, TypeError) as e:
+            print(f"Error processing entry: {e}")
+            continue
     
     return sorted(list(tool_names))
 
@@ -83,13 +96,17 @@ def filter_by_tool(dataset: Dataset, tool_name: str) -> List[Dict]:
     filtered_entries = []
     
     for entry in dataset["train"]:
-        parsed = parse_json_entry(entry)
-        tools = parsed.get("tools", [])
-        
-        if isinstance(tools, list):
-            for tool in tools:
-                if isinstance(tool, dict) and tool.get("name") == tool_name:
-                    filtered_entries.append(parsed)
-                    break
+        try:
+            parsed = parse_json_entry(entry)
+            tools = parsed.get("tools", [])
+            
+            if isinstance(tools, list):
+                for tool in tools:
+                    if isinstance(tool, dict) and tool.get("name") == tool_name:
+                        filtered_entries.append(parsed)
+                        break
+        except (ValueError, TypeError) as e:
+            print(f"Error processing entry: {e}")
+            continue
     
     return filtered_entries
