@@ -1,6 +1,6 @@
 # Function Calling Dataset Analysis
 
-This project provides tools for analyzing the [Salesforce/xlam-function-calling-60k](https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k) dataset, a collection of 60,000 function calling examples created with the APIGen pipeline.
+This project provides tools for analyzing the [Salesforce/xlam-function-calling-60k](https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k) dataset, a collection of 60,000 function calling examples created with the APIGen pipeline. It also includes functionality to translate queries to Polish for fine-tuning the PLLUM model.
 
 ## Overview
 
@@ -13,14 +13,23 @@ According to human evaluation of 600 sampled data points, the dataset has a corr
 ```
 .
 ├── .env                  # Environment variables (add your HF token here)
+├── .gitignore            # Git ignore file
+├── data/                 # Directory for generated datasets
+│   └── .gitkeep          # Placeholder to ensure directory is tracked
+├── docs/                 # Documentation directory
+│   └── project_instruction.md  # Project instructions
 ├── pyproject.toml        # Project dependencies and metadata
 ├── README.md             # Project documentation
 ├── src/                  # Source code
 │   ├── __init__.py       # Makes src a package
 │   ├── auth.py           # Hugging Face authentication utilities
-│   └── dataset.py        # Dataset loading and processing utilities
+│   ├── dataset.py        # Dataset loading and processing utilities
+│   ├── translator.py     # Utilities for translating text
+│   └── translation_dataset.py  # Create translated datasets
 └── notebooks/            # Jupyter notebooks
-    └── dataset_exploration.ipynb  # Example notebook for exploring the dataset
+    ├── dataset_exploration.ipynb     # Notebook for exploring the dataset
+    ├── translation_test.ipynb        # Test notebook for translation
+    └── create_translated_dataset.ipynb  # Notebook for creating translated dataset
 ```
 
 ## Setup
@@ -61,6 +70,42 @@ sample = dataset['train'][0]
 print(sample)
 ```
 
+### Translating Queries to Polish
+
+```python
+from src.translator import translate_text, translate_query_in_sample
+
+# Translate a single text
+english_text = "Find the nearest restaurant to my location"
+polish_text = translate_text(english_text, src='en', dest='pl')
+print(polish_text)
+
+# Translate a query in a dataset sample
+from src.dataset import load_function_calling_dataset, parse_json_entry
+
+dataset = load_function_calling_dataset()
+sample = dataset['train'][0]
+translated_sample = translate_query_in_sample(sample, src='en', dest='pl')
+parsed = parse_json_entry(translated_sample)
+print(f"Translated query: {parsed['query']}")
+```
+
+### Creating a Translated Dataset
+
+```python
+from src.translation_dataset import create_translated_dataset
+
+# Create a dataset with 40% queries translated to Polish
+output_path = "data/translated_dataset.json"
+translated_dataset_path = create_translated_dataset(
+    output_path=output_path,
+    sample_size=1000,  # Optional: limit dataset size
+    translation_percentage=0.4,
+    random_seed=42
+)
+print(f"Dataset created at: {translated_dataset_path}")
+```
+
 ### Exploring with Notebooks
 
 Start Jupyter to explore the notebooks:
@@ -69,7 +114,19 @@ Start Jupyter to explore the notebooks:
 jupyter notebook
 ```
 
-Then navigate to the `notebooks/dataset_exploration.ipynb` notebook to see examples of working with the dataset.
+Available notebooks:
+- `notebooks/dataset_exploration.ipynb` - Examples of working with the dataset
+- `notebooks/translation_test.ipynb` - Testing the translation functionality
+- `notebooks/create_translated_dataset.ipynb` - Creating a dataset with Polish translations
+
+## Translation Features
+
+The project includes functionality to translate dataset queries from English to Polish:
+
+- `src/translator.py` - Utilities for translating text using the Googletrans library
+- `src/translation_dataset.py` - Functions for creating datasets with translated queries
+- Ability to create a dataset with a specified percentage (default 40%) of queries translated to Polish
+- Preservation of original dataset structure, with only the query field translated
 
 ## Data Format
 
