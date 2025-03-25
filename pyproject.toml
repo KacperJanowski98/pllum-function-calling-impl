@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "tqdm>=4.66.0",
     "plotly>=5.18.0",
+    "googletrans==4.0.0-rc1",  # For translating English to Polish
 ]
 
 [project.optional-dependencies]
