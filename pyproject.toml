@@ -19,6 +19,7 @@ dependencies = [
     "tqdm>=4.66.0",
     "plotly>=5.18.0",
     "googletrans==4.0.0-rc1",  # For translating English to Polish
+    "langdetect>=1.0.9"
 ]
 
 [project.optional-dependencies]

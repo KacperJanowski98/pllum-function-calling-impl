@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 from datasets import Dataset, load_dataset
+from langdetect import DetectorFactory, detect, LangDetectException
 
 from src.auth import login_to_huggingface
 from src.translator import batch_translate_queries
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -127,7 +129,7 @@ def create_translated_dataset(
 
 def analyze_translated_dataset(file_path: Union[str, Path]) -> pd.DataFrame:
     """
-    Analyze a translated dataset to check language distribution.
+    Analyze a translated dataset to check language distribution using a robust language detector.
     
     Args:
         file_path: Path to the translated dataset file
@@ -141,21 +143,44 @@ def analyze_translated_dataset(file_path: Union[str, Path]) -> pd.DataFrame:
     with open(file_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    # Count English vs Polish samples
-    # This is a simplistic approach - a more robust approach would use a language detector
+    # Analyze language distribution with a proper language detector
     results = []
     
     for i, sample in enumerate(data):
         query = sample.get('query', '')
         
-        # Very basic language detection based on Polish characters
-        has_polish_chars = any(c in query for c in 'ąćęłńóśźżĄĆĘŁŃÓŚŹŻ')
-        
-        results.append({
-            'index': i,
-            'language': 'Polish' if has_polish_chars else 'English',
-            'query': query[:100] + '...' if len(query) > 100 else query
-        })
+        # Skip empty queries
+        if not query:
+            continue
+            
+        try:
+            # Detect language (returns language code like 'en', 'pl', etc.)
+            lang_code = detect(query)
+            
+            # Map language codes to full names
+            language_names = {
+                'en': 'English',
+                'pl': 'Polish',
+                # Add more mappings as needed
+            }
+            
+            language = language_names.get(lang_code, lang_code)
+            
+            results.append({
+                'index': i,
+                'language': language,
+                'language_code': lang_code,
+                'query': query[:100] + '...' if len(query) > 100 else query
+            })
+            
+        except LangDetectException as e:
+            logger.warning(f"Could not detect language for sample {i}: {str(e)}")
+            results.append({
+                'index': i,
+                'language': 'Unknown',
+                'language_code': 'unknown',
+                'query': query[:100] + '...' if len(query) > 100 else query
+            })
     
     df = pd.DataFrame(results)
     
@@ -164,5 +189,8 @@ def analyze_translated_dataset(file_path: Union[str, Path]) -> pd.DataFrame:
     summary.columns = ['Language', 'Count']
     summary['Percentage'] = 100 * summary['Count'] / len(df)
     
-    logger.info(f"Analysis complete - found {len(df)} samples")
+    logger.info(f"Analysis complete - found {len(df)} samples with the following language distribution:")
+    for _, row in summary.iterrows():
+        logger.info(f"  - {row['Language']}: {row['Count']} samples ({row['Percentage']:.1f}%)")
+    
     return summary
