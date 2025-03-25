@@ -1,5 +1,3 @@
-"""Utilities for creating translated dataset."""
-
 import json
 import logging
 import os
@@ -11,12 +9,12 @@ import pandas as pd
 from datasets import Dataset, load_dataset
 
 from src.auth import login_to_huggingface
-from src.dataset import parse_json_entry
 from src.translator import batch_translate_queries
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 def ensure_data_directory():
     """

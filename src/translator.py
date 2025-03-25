@@ -1,14 +1,13 @@
-"""Utilities for translating dataset content."""
-
 import logging
 import time
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 from googletrans import Translator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 def translate_text(text: str, src: str = 'en', dest: str = 'pl', retries: int = 3, delay: int = 1) -> str:
     """
