@@ -1,11 +1,10 @@
-# Python cache files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-
-# Distribution / packaging
+env/
 build/
 develop-eggs/
 dist/
@@ -17,9 +16,7 @@ lib64/
 parts/
 sdist/
 var/
-wheels/
 *.egg-info/
-*.egg-info
 .installed.cfg
 *.egg
 
@@ -31,19 +28,31 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.python-version
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*/.ipynb_checkpoints/*
 
-# IDE specific files
+# Data
+data/
+*.csv
+*.json
+*.gz
+*.zip
+!data/.gitkeep
+
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Logs
-logs/
-*.log
-
-# Dataset cache
-dataset_cache/
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
