@@ -285,21 +285,18 @@ def setup_model_and_tokenizer(config: PLLuMFineTuningConfig):
         logger.info(f"CUDA memory after loading model: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
         logger.info(f"CUDA memory reserved: {torch.cuda.memory_reserved() / 1e9:.2f}GB")
     
-    # Configure LoRA
-    lora_config = LoraConfig(
+    # Define target modules for LoRA
+    target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    
+    # Apply LoRA adapters using Unsloth
+    # Pass individual parameters instead of a LoraConfig object
+    model = FastLanguageModel.get_peft_model(
+        model,
         r=config.lora_r,
+        target_modules=target_modules,
         lora_alpha=config.lora_alpha,
         lora_dropout=config.lora_dropout,
         bias="none",
-        task_type="CAUSAL_LM",
-        # Target specific modules for LoRA
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    )
-    
-    # Apply LoRA adapters using Unsloth
-    model = FastLanguageModel.get_peft_model(
-        model,
-        lora_config,
         use_gradient_checkpointing=True,
     )
     
