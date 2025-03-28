@@ -55,9 +55,10 @@ class FunctionCallingDataset(Dataset):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
         self.labels = labels
+        self.num_examples = len(input_ids)
     
     def __len__(self):
-        return len(self.input_ids)
+        return self.num_examples
     
     def __getitem__(self, idx):
         return {
@@ -194,7 +195,8 @@ def prepare_dataset(
     with open(dataset_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    logger.info(f"Loaded {len(data)} examples from {dataset_path}")
+    num_examples = len(data)
+    logger.info(f"Loaded {num_examples} examples from {dataset_path}")
     
     # Format the examples
     formatted_examples = [format_func(example) for example in data]
@@ -209,12 +211,15 @@ def prepare_dataset(
         return_tensors="pt",
     )
     
-    # Create and return a proper Dataset
-    return FunctionCallingDataset(
+    # Create dataset
+    dataset = FunctionCallingDataset(
         tokenized["input_ids"],
         tokenized["attention_mask"],
         tokenized["input_ids"].clone()  # Labels are the same as input_ids for causal LM
     )
+    
+    logger.info(f"Created dataset with {len(dataset)} examples")
+    return dataset
 
 
 def setup_model_and_tokenizer(config: PLLuMFineTuningConfig):
