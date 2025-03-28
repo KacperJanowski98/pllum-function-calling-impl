@@ -33,6 +33,7 @@ venv.bak/
 # Jupyter Notebook
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
+notebooks/unsloth_compiled_cache/
 
 # Data
 data/
