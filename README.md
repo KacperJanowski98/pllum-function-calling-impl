@@ -1,6 +1,6 @@
-# Function Calling Dataset Analysis
+# Function Calling Dataset Analysis and PLLuM Fine-tuning
 
-This project provides tools for analyzing the [Salesforce/xlam-function-calling-60k](https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k) dataset, a collection of 60,000 function calling examples created with the APIGen pipeline. It also includes functionality to translate queries to Polish for fine-tuning the PLLUM model.
+This project provides tools for analyzing the [Salesforce/xlam-function-calling-60k](https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k) dataset, a collection of 60,000 function calling examples created with the APIGen pipeline. It includes functionality to translate queries to Polish for fine-tuning the PLLuM model, and implements fine-tuning of the PLLuM 8B model for function calling tasks using QLoRA and the Unsloth framework.
 
 ## Overview
 
@@ -17,19 +17,24 @@ According to human evaluation of 600 sampled data points, the dataset has a corr
 ├── data/                 # Directory for generated datasets
 │   └── .gitkeep          # Placeholder to ensure directory is tracked
 ├── docs/                 # Documentation directory
-│   └── project_instruction.md  # Project instructions
+│   └── instruction.md    # Project instructions
+├── models/               # Directory for storing fine-tuned models
+│   └── .gitkeep          # Placeholder to ensure directory is tracked
 ├── pyproject.toml        # Project dependencies and metadata
 ├── README.md             # Project documentation
 ├── src/                  # Source code
 │   ├── __init__.py       # Makes src a package
 │   ├── auth.py           # Hugging Face authentication utilities
 │   ├── dataset.py        # Dataset loading and processing utilities
+│   ├── fine_tuning.py    # Utilities for fine-tuning the PLLuM model
 │   ├── translator.py     # Utilities for translating text
 │   └── translation_dataset.py  # Create translated datasets
 └── notebooks/            # Jupyter notebooks
-    ├── dataset_exploration.ipynb     # Notebook for exploring the dataset
-    ├── translation_test.ipynb        # Test notebook for translation
-    └── create_translated_dataset.ipynb  # Notebook for creating translated dataset
+    ├── create_translated_dataset.ipynb  # Create a dataset with Polish translations
+    ├── dataset_exploration.ipynb        # Notebook for exploring the dataset
+    ├── fine_tuning.ipynb                # Notebook for fine-tuning PLLuM model
+    ├── test_model.ipynb                 # Test notebook for the fine-tuned model
+    └── translation_test.ipynb           # Test notebook for translation
 ```
 
 ## Setup
@@ -39,13 +44,14 @@ According to human evaluation of 600 sampled data points, the dataset has a corr
 - Python 3.10 or later
 - [uv](https://github.com/astral-sh/uv) for dependency management
 - A Hugging Face account with access to the dataset
+- NVIDIA GPU (RTX 4060 or better) with CUDA support
 
 ### Installation
 
 1. Create a virtual environment and install dependencies:
 ```bash
 uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
 uv pip install -e .
 ```
 
@@ -106,6 +112,92 @@ translated_dataset_path = create_translated_dataset(
 print(f"Dataset created at: {translated_dataset_path}")
 ```
 
+### Fine-tuning PLLuM for Function Calling
+
+The project includes functionality to fine-tune the [CYFRAGOVPL/Llama-PLLuM-8B-instruct](https://huggingface.co/CYFRAGOVPL/Llama-PLLuM-8B-instruct) model for function calling:
+
+```python
+from src.fine_tuning import (
+    PLLuMFineTuningConfig,
+    setup_model_and_tokenizer,
+    prepare_dataset,
+    train_model
+)
+
+# Configure fine-tuning parameters
+config = PLLuMFineTuningConfig(
+    model_name_or_path="CYFRAGOVPL/Llama-PLLuM-8B-instruct",
+    output_dir="models/pllum-function-calling",
+    dataset_path="data/translated_dataset.json",
+    # QLoRA settings for efficient training on consumer GPUs
+    use_4bit=True,
+    lora_r=16,
+    lora_alpha=32
+)
+
+# Load model and tokenizer with QLoRA and Unsloth optimizations
+model, tokenizer = setup_model_and_tokenizer(config)
+
+# Prepare dataset for training
+train_dataset = prepare_dataset(
+    dataset_path=config.dataset_path,
+    tokenizer=tokenizer,
+    max_length=config.max_seq_length
+)
+
+# Train the model
+trained_model = train_model(
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=train_dataset,
+    config=config
+)
+```
+
+### Using the Fine-tuned Model
+
+```python
+from src.fine_tuning import (
+    load_fine_tuned_model,
+    generate_function_call
+)
+
+# Load a fine-tuned model
+model, tokenizer = load_fine_tuned_model("models/pllum-function-calling")
+
+# Define tools
+weather_tools = [
+    {
+        "name": "get_weather",
+        "description": "Get the current weather for a location",
+        "parameters": {
+            "location": {
+                "type": "string",
+                "description": "The city and state or country",
+                "required": True
+            },
+            "unit": {
+                "type": "string",
+                "description": "Unit of temperature: 'celsius' or 'fahrenheit'",
+                "required": False
+            }
+        }
+    }
+]
+
+# Generate function call for a query
+query = "Jaka jest pogoda w Warszawie?"  # Polish query: "What's the weather in Warsaw?"
+function_call = generate_function_call(
+    model=model,
+    tokenizer=tokenizer,
+    query=query,
+    tools=weather_tools,
+    temperature=0.1
+)
+
+print(function_call)
+```
+
 ### Exploring with Notebooks
 
 Start Jupyter to explore the notebooks:
@@ -118,6 +210,19 @@ Available notebooks:
 - `notebooks/dataset_exploration.ipynb` - Examples of working with the dataset
 - `notebooks/translation_test.ipynb` - Testing the translation functionality
 - `notebooks/create_translated_dataset.ipynb` - Creating a dataset with Polish translations
+- `notebooks/fine_tuning.ipynb` - Fine-tuning PLLuM 8B with QLoRA and Unsloth
+- `notebooks/test_model.ipynb` - Testing the fine-tuned model for function calling
+
+## Fine-tuning Features
+
+The project includes functionality to fine-tune the PLLuM 8B model for function calling:
+
+- `src/fine_tuning.py` - Utilities for fine-tuning the PLLuM model with QLoRA and Unsloth
+- Optimized for consumer GPUs (tested on NVIDIA RTX 4060)
+- Using 4-bit quantization for memory efficiency
+- Support for both English and Polish queries
+- Customizable hyperparameters via the `PLLuMFineTuningConfig` class
+- Generation utilities for using the fine-tuned model
 
 ## Translation Features
 
@@ -145,3 +250,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 - [Salesforce/xlam-function-calling-60k](https://huggingface.co/datasets/Salesforce/xlam-function-calling-60k) dataset
 - [APIGen pipeline](https://apigen-pipeline.github.io/) for dataset generation
+- [CYFRAGOVPL/Llama-PLLuM-8B-instruct](https://huggingface.co/CYFRAGOVPL/Llama-PLLuM-8B-instruct) model
+- [Unsloth](https://github.com/unslothai/unsloth) framework for optimized LLM fine-tuning
