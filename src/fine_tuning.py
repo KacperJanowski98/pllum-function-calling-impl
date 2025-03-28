@@ -106,6 +106,25 @@ def format_function_calling_prompt(example: Dict) -> str:
     tools = example["tools"]
     answers = example["answers"]
     
+    # Handle case where tools and answers are stored as JSON strings
+    if isinstance(tools, str):
+        try:
+            tools = json.loads(tools)
+            logger.info("Parsed tools from JSON string")
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing tools JSON: {e}")
+            # Provide a fallback if parsing fails
+            tools = [{"name": "error", "description": "Error parsing tools JSON"}]
+    
+    if isinstance(answers, str):
+        try:
+            answers = json.loads(answers)
+            logger.info("Parsed answers from JSON string")
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing answers JSON: {e}")
+            # Provide a fallback if parsing fails
+            answers = [{"name": "error", "arguments": {}}]
+    
     # Format tools as a string
     tools_str = json.dumps(tools, indent=2, ensure_ascii=False)
     
@@ -153,6 +172,42 @@ def prepare_dataset(
     # Load the dataset
     with open(dataset_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
+    
+    # Check and fix dataset format if needed (handle string JSON)
+    fixed_data = []
+    needs_fixing = False
+    
+    # Check a sample to see if fixing is needed
+    if len(data) > 0:
+        sample = data[0]
+        if isinstance(sample, dict):
+            if isinstance(sample.get('tools'), str) or isinstance(sample.get('answers'), str):
+                needs_fixing = True
+                logger.warning("Dataset contains string-encoded JSON. Fixing automatically.")
+    
+    # Fix the dataset if needed
+    if needs_fixing:
+        for item in data:
+            fixed_item = item.copy()
+            
+            # Fix tools if needed
+            if isinstance(item.get('tools'), str):
+                try:
+                    fixed_item['tools'] = json.loads(item['tools'])
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error parsing tools JSON: {e}")
+            
+            # Fix answers if needed
+            if isinstance(item.get('answers'), str):
+                try:
+                    fixed_item['answers'] = json.loads(item['answers'])
+                except json.JSONDecodeError as e:
+                    logger.error(f"Error parsing answers JSON: {e}")
+            
+            fixed_data.append(fixed_item)
+        
+        data = fixed_data
+        logger.info(f"Fixed {len(data)} examples in the dataset")
     
     # Format the examples
     formatted_examples = [format_func(example) for example in data]
@@ -402,6 +457,16 @@ def generate_function_call(
     Returns:
         Generated function call as a dictionary
     """
+    # Handle case where tools might be a string (should be a list of dicts)
+    if isinstance(tools, str):
+        try:
+            tools = json.loads(tools)
+            logger.info("Parsed tools from JSON string for generation")
+        except json.JSONDecodeError as e:
+            logger.error(f"Error parsing tools JSON for generation: {e}")
+            # Provide a fallback if parsing fails
+            tools = [{"name": "error", "description": "Error parsing tools JSON"}]
+    
     # Format the tools as a JSON string
     tools_str = json.dumps(tools, indent=2, ensure_ascii=False)
     
