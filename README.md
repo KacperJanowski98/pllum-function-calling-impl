@@ -45,6 +45,7 @@ According to human evaluation of 600 sampled data points, the dataset has a corr
 - [uv](https://github.com/astral-sh/uv) for dependency management
 - A Hugging Face account with access to the dataset
 - NVIDIA GPU (RTX 4060 or better) with CUDA support
+- CUDA Toolkit (11.8 or compatible version)
 
 ### Installation
 
@@ -52,13 +53,34 @@ According to human evaluation of 600 sampled data points, the dataset has a corr
 ```bash
 uv venv
 source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
+```
+
+2. Install PyTorch with CUDA support:
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu118
+```
+
+3. Install the rest of the dependencies:
+```bash
 uv pip install -e .
 ```
 
-2. Create a `.env` file with your Hugging Face token:
+4. Install CUDA-specific optimizations (optional but recommended):
+```bash
+uv pip install -e ".[cuda]"
+```
+
+5. Create a `.env` file with your Hugging Face token:
 ```bash
 cp .env.example .env
 # Edit .env to add your Hugging Face token
+```
+
+6. Verify CUDA availability:
+```python
+import torch
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"CUDA version: {torch.version.cuda}")
 ```
 
 ## Usage
@@ -223,6 +245,21 @@ The project includes functionality to fine-tune the PLLuM 8B model for function 
 - Support for both English and Polish queries
 - Customizable hyperparameters via the `PLLuMFineTuningConfig` class
 - Generation utilities for using the fine-tuned model
+
+## CUDA Configuration
+
+This project relies heavily on CUDA for GPU acceleration. The implementation:
+
+- Uses PyTorch with CUDA support for tensor operations
+- Implements QLoRA 4-bit quantization to reduce GPU memory requirements
+- Leverages the Unsloth framework for optimized training on consumer GPUs
+- Includes CUDA-specific optimizations (triton, flash-attention) as optional dependencies
+
+For optimal performance on an RTX 4060:
+- Set `per_device_train_batch_size=4` (or lower if you encounter OOM errors)
+- Enable gradient accumulation (recommended: `gradient_accumulation_steps=2`)
+- Use 4-bit quantization (`use_4bit=True`)
+- Adjust LoRA ranks based on available memory (`lora_r=16` is a good starting point)
 
 ## Translation Features
 

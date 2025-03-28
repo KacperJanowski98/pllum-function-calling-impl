@@ -28,6 +28,24 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Check CUDA availability at module import time
+if torch.cuda.is_available():
+    logger.info(f"CUDA is available: {torch.cuda.get_device_name(0)}")
+    logger.info(f"CUDA version: {torch.version.cuda}")
+    try:
+        # Try to import and use nvidia-ml-py for more detailed GPU info
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        logger.info(f"GPU memory: Total={info.total / 1e9:.2f}GB, Free={info.free / 1e9:.2f}GB, Used={info.used / 1e9:.2f}GB")
+        pynvml.nvmlShutdown()
+    except (ImportError, Exception) as e:
+        logger.warning(f"Could not get detailed GPU info: {e}")
+else:
+    logger.warning("CUDA is not available. Training will be very slow on CPU.")
+
+
 @dataclass
 class PLLuMFineTuningConfig:
     """Configuration for fine-tuning PLLuM model."""
@@ -68,6 +86,10 @@ class PLLuMFineTuningConfig:
     # Tokenization
     padding: str = "max_length"
     pad_to_multiple_of: Optional[int] = 8
+    
+    # CUDA and device settings
+    use_cuda: bool = True  # Default to using CUDA if available
+    device_map: str = "auto"  # Let HF decide on device mapping
     
 
 def format_function_calling_prompt(example: Dict) -> str:
@@ -171,6 +193,20 @@ def setup_model_and_tokenizer(config: PLLuMFineTuningConfig):
     Returns:
         Tuple of (model, tokenizer)
     """
+    # Ensure CUDA if required and available
+    if config.use_cuda and not torch.cuda.is_available():
+        logger.warning("CUDA requested but not available. Falling back to CPU.")
+        config.use_cuda = False
+    
+    # Use cuda if available and requested
+    device = "cuda" if config.use_cuda and torch.cuda.is_available() else "cpu"
+    logger.info(f"Using device: {device}")
+    
+    # Log CUDA memory before loading model
+    if device == "cuda":
+        logger.info(f"CUDA memory before loading model: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
+        logger.info(f"CUDA memory reserved: {torch.cuda.memory_reserved() / 1e9:.2f}GB")
+    
     # Define quantization config for BitsAndBytes
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=config.use_4bit,
@@ -180,12 +216,19 @@ def setup_model_and_tokenizer(config: PLLuMFineTuningConfig):
     )
     
     # Load PLLuM model and tokenizer using Unsloth's optimized loader
+    logger.info(f"Loading model from {config.model_name_or_path}")
     model, tokenizer = FastLanguageModel.from_pretrained(
         model_name=config.model_name_or_path,
         max_seq_length=config.max_seq_length,
         dtype=None,  # Automatically decide based on GPU availability
-        quantization_config=bnb_config,
+        quantization_config=bnb_config if device == "cuda" else None,
+        device_map=config.device_map if device == "cuda" else None,
     )
+    
+    # Log CUDA memory after loading model
+    if device == "cuda":
+        logger.info(f"CUDA memory after loading model: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
+        logger.info(f"CUDA memory reserved: {torch.cuda.memory_reserved() / 1e9:.2f}GB")
     
     # Configure LoRA
     lora_config = LoraConfig(
@@ -245,12 +288,12 @@ def train_model(
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         save_total_limit=config.save_total_limit,
-        fp16=True,  # Mixed precision training
+        fp16=torch.cuda.is_available(),  # Mixed precision training if CUDA is available
         bf16=False,  # Use FP16 instead of BF16
         report_to="tensorboard",
         optim="adamw_torch",
         ddp_find_unused_parameters=False,
-        dataloader_pin_memory=False,
+        dataloader_pin_memory=torch.cuda.is_available(),  # Pin memory if CUDA available
         remove_unused_columns=False,  # Important for custom datasets
     )
     
@@ -269,7 +312,18 @@ def train_model(
     
     # Start training
     logger.info("Starting model training...")
+    
+    # Log CUDA memory before training
+    if torch.cuda.is_available():
+        logger.info(f"CUDA memory before training: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
+        logger.info(f"CUDA memory reserved: {torch.cuda.memory_reserved() / 1e9:.2f}GB")
+    
     trainer.train()
+    
+    # Log CUDA memory after training
+    if torch.cuda.is_available():
+        logger.info(f"CUDA memory after training: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
+        logger.info(f"CUDA memory reserved: {torch.cuda.memory_reserved() / 1e9:.2f}GB")
     
     # Save the model
     model.save_pretrained(config.output_dir)
@@ -294,6 +348,12 @@ def load_fine_tuned_model(model_path: str, device: str = "auto"):
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     
+    logger.info(f"Loading fine-tuned model from {model_path} on {device}")
+    
+    # Log CUDA memory before loading
+    if device == "cuda":
+        logger.info(f"CUDA memory before loading: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
+    
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     
@@ -306,10 +366,14 @@ def load_fine_tuned_model(model_path: str, device: str = "auto"):
     # Load model with Unsloth optimizations for inference
     model, _ = FastLanguageModel.from_pretrained(
         model_path,
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
         device_map=device,
         quantization_config=bnb_config if device == "cuda" else None,
     )
+    
+    # Log CUDA memory after loading
+    if device == "cuda":
+        logger.info(f"CUDA memory after loading: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
     
     return model, tokenizer
 
@@ -355,7 +419,11 @@ Dostępne narzędzia:
 """
     
     # Tokenize the prompt
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    inputs = tokenizer(prompt, return_tensors="pt")
+    
+    # Move inputs to the model's device
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
     
     # Generate response
     with torch.no_grad():
@@ -383,3 +451,72 @@ Dostępne narzędzia:
     except json.JSONDecodeError:
         # If parsing fails, return the raw response
         return {"raw_response": assistant_response}
+
+
+def check_cuda_compatibility():
+    """
+    Check CUDA compatibility and print detailed information about the setup.
+    
+    Returns:
+        Dictionary with CUDA information
+    """
+    cuda_info = {
+        "cuda_available": torch.cuda.is_available(),
+        "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
+        "device_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+        "devices": [],
+    }
+    
+    if cuda_info["cuda_available"]:
+        # Get details for each CUDA device
+        for i in range(cuda_info["device_count"]):
+            props = torch.cuda.get_device_properties(i)
+            cuda_info["devices"].append({
+                "name": props.name,
+                "compute_capability": f"{props.major}.{props.minor}",
+                "total_memory_gb": props.total_memory / 1e9,
+                "multi_processor_count": props.multi_processor_count,
+            })
+            
+        # Try to get more detailed info with pynvml
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            
+            cuda_info["driver_version"] = pynvml.nvmlSystemGetDriverVersion()
+            
+            for i in range(cuda_info["device_count"]):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                util_info = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                
+                cuda_info["devices"][i].update({
+                    "memory_free_gb": mem_info.free / 1e9,
+                    "memory_used_gb": mem_info.used / 1e9,
+                    "gpu_utilization": util_info.gpu,
+                    "memory_utilization": util_info.memory,
+                })
+            
+            pynvml.nvmlShutdown()
+        except (ImportError, Exception) as e:
+            cuda_info["pynvml_error"] = str(e)
+    
+    # Print the CUDA information
+    if cuda_info["cuda_available"]:
+        logger.info(f"CUDA is available - Version: {cuda_info['cuda_version']}")
+        logger.info(f"Found {cuda_info['device_count']} CUDA device(s)")
+        
+        for i, device in enumerate(cuda_info["devices"]):
+            logger.info(f"Device {i}: {device['name']}")
+            logger.info(f"  Compute capability: {device['compute_capability']}")
+            logger.info(f"  Total memory: {device['total_memory_gb']:.2f} GB")
+            
+            if "memory_free_gb" in device:
+                logger.info(f"  Free memory: {device['memory_free_gb']:.2f} GB")
+                logger.info(f"  Used memory: {device['memory_used_gb']:.2f} GB")
+                logger.info(f"  GPU utilization: {device['gpu_utilization']}%")
+                logger.info(f"  Memory utilization: {device['memory_utilization']}%")
+    else:
+        logger.warning("CUDA is not available. Training will be very slow on CPU.")
+    
+    return cuda_info
