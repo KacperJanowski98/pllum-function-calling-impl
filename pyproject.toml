@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pllum-function-calling"
 version = "0.1.0"
-description = "Tools for analyzing the Salesforce/xlam-function-calling-60k dataset"
+description = "Tools for analyzing the Salesforce/xlam-function-calling-60k dataset and fine-tuning PLLuM for function calling"
 requires-python = ">=3.10"
 dependencies = [
     "datasets>=2.17.0",
@@ -19,7 +19,21 @@ dependencies = [
     "tqdm>=4.66.0",
     "plotly>=5.18.0",
     "googletrans==4.0.0-rc1",  # For translating English to Polish
-    "langdetect>=1.0.9"
+    "langdetect>=1.0.9",
+    # Fine-tuning dependencies
+    "torch>=2.0.0",
+    "transformers>=4.34.0",
+    "peft>=0.5.0",  # For QLoRA fine-tuning
+    "accelerate>=0.23.0",  # Required for efficient training
+    "bitsandbytes>=0.40.0",  # For 4-bit quantization
+    "einops>=0.6.1",  # Required by some transformer models
+    "unsloth>=0.4.0",  # Unsloth framework for optimized training
+    "sentencepiece>=0.1.99",  # For tokenization
+    "optimum>=1.12.0",  # HuggingFace optimization
+    "tensorboard>=2.14.0",  # For tracking training metrics
+    "evaluate>=0.4.0",  # For model evaluation
+    "rouge-score>=0.1.2",  # For evaluating text generation
+    "safetensors>=0.3.3",  # For model safetensors
 ]
 
 [project.optional-dependencies]
