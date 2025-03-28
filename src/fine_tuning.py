@@ -8,6 +8,7 @@ import logging
 import torch
 from typing import Dict, List, Optional, Union, Any, Tuple
 from dataclasses import dataclass
+from torch.utils.data import Dataset
 from transformers import (
     TrainingArguments,
     Trainer,
@@ -44,6 +45,26 @@ if torch.cuda.is_available():
         logger.warning(f"Could not get detailed GPU info: {e}")
 else:
     logger.warning("CUDA is not available. Training will be very slow on CPU.")
+
+
+# Custom PyTorch Dataset for function calling
+class FunctionCallingDataset(Dataset):
+    """Dataset for function calling fine-tuning."""
+    
+    def __init__(self, input_ids, attention_mask, labels):
+        self.input_ids = input_ids
+        self.attention_mask = attention_mask
+        self.labels = labels
+    
+    def __len__(self):
+        return len(self.input_ids)
+    
+    def __getitem__(self, idx):
+        return {
+            "input_ids": self.input_ids[idx],
+            "attention_mask": self.attention_mask[idx],
+            "labels": self.labels[idx]
+        }
 
 
 @dataclass
@@ -153,7 +174,7 @@ def prepare_dataset(
     tokenizer, 
     max_length: int = 1024,
     custom_format_func=None
-) -> Dict:
+) -> FunctionCallingDataset:
     """
     Prepare the dataset for fine-tuning.
     
@@ -164,7 +185,7 @@ def prepare_dataset(
         custom_format_func: Optional custom formatting function
         
     Returns:
-        Tokenized dataset
+        A PyTorch Dataset for training
     """
     # Default to format_function_calling_prompt if no custom function is provided
     format_func = custom_format_func or format_function_calling_prompt
@@ -173,69 +194,27 @@ def prepare_dataset(
     with open(dataset_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    # Check and fix dataset format if needed (handle string JSON)
-    fixed_data = []
-    needs_fixing = False
-    
-    # Check a sample to see if fixing is needed
-    if len(data) > 0:
-        sample = data[0]
-        if isinstance(sample, dict):
-            if isinstance(sample.get('tools'), str) or isinstance(sample.get('answers'), str):
-                needs_fixing = True
-                logger.warning("Dataset contains string-encoded JSON. Fixing automatically.")
-    
-    # Fix the dataset if needed
-    if needs_fixing:
-        for item in data:
-            fixed_item = item.copy()
-            
-            # Fix tools if needed
-            if isinstance(item.get('tools'), str):
-                try:
-                    fixed_item['tools'] = json.loads(item['tools'])
-                except json.JSONDecodeError as e:
-                    logger.error(f"Error parsing tools JSON: {e}")
-            
-            # Fix answers if needed
-            if isinstance(item.get('answers'), str):
-                try:
-                    fixed_item['answers'] = json.loads(item['answers'])
-                except json.JSONDecodeError as e:
-                    logger.error(f"Error parsing answers JSON: {e}")
-            
-            fixed_data.append(fixed_item)
-        
-        data = fixed_data
-        logger.info(f"Fixed {len(data)} examples in the dataset")
+    logger.info(f"Loaded {len(data)} examples from {dataset_path}")
     
     # Format the examples
     formatted_examples = [format_func(example) for example in data]
+    logger.info(f"Formatted {len(formatted_examples)} examples")
     
     # Tokenize the examples
-    def tokenize_function(examples):
-        tokenized = tokenizer(
-            examples,
-            padding="max_length",
-            truncation=True,
-            max_length=max_length,
-            return_tensors="pt",
-        )
-        # Set labels equal to input_ids for causal LM fine-tuning
-        tokenized["labels"] = tokenized["input_ids"].clone()
-        return tokenized
+    tokenized = tokenizer(
+        formatted_examples,
+        padding="max_length",
+        truncation=True,
+        max_length=max_length,
+        return_tensors="pt",
+    )
     
-    # Apply tokenization
-    tokenized_dataset = tokenize_function(formatted_examples)
-    
-    # Convert to DatasetDict format expected by trainer
-    train_dataset = {
-        "input_ids": tokenized_dataset["input_ids"],
-        "attention_mask": tokenized_dataset["attention_mask"],
-        "labels": tokenized_dataset["labels"],
-    }
-    
-    return train_dataset
+    # Create and return a proper Dataset
+    return FunctionCallingDataset(
+        tokenized["input_ids"],
+        tokenized["attention_mask"],
+        tokenized["input_ids"].clone()  # Labels are the same as input_ids for causal LM
+    )
 
 
 def setup_model_and_tokenizer(config: PLLuMFineTuningConfig):
@@ -310,7 +289,7 @@ def setup_model_and_tokenizer(config: PLLuMFineTuningConfig):
 def train_model(
     model,
     tokenizer,
-    train_dataset: Dict,
+    train_dataset: FunctionCallingDataset,
     config: PLLuMFineTuningConfig,
 ) -> PeftModel:
     """
@@ -319,7 +298,7 @@ def train_model(
     Args:
         model: The model to fine-tune
         tokenizer: The tokenizer
-        train_dataset: The prepared and tokenized dataset
+        train_dataset: The prepared Dataset for training
         config: Fine-tuning configuration
         
     Returns:
@@ -355,11 +334,6 @@ def train_model(
         args=training_args,
         train_dataset=train_dataset,
         tokenizer=tokenizer,
-        data_collator=lambda data: {
-            'input_ids': torch.stack([f["input_ids"] for f in data]),
-            'attention_mask': torch.stack([f["attention_mask"] for f in data]),
-            'labels': torch.stack([f["labels"] for f in data]),
-        },
     )
     
     # Start training
