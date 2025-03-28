@@ -42,6 +42,7 @@ data/
 *.gz
 *.zip
 !data/.gitkeep
+models/
 
 # IDE
 .idea/
