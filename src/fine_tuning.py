@@ -2,11 +2,10 @@
 Utilities for fine-tuning the PLLuM model for function calling.
 """
 
-import os
 import json
 import logging
 import torch
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from torch.utils.data import Dataset
 from transformers import (
@@ -17,9 +16,7 @@ from transformers import (
     BitsAndBytesConfig,
 )
 from peft import (
-    LoraConfig,
     PeftModel,
-    prepare_model_for_kbit_training,
     get_peft_model,
 )
 from unsloth import FastLanguageModel
@@ -366,7 +363,7 @@ def train_model(
 
 def load_fine_tuned_model(model_path: str, device: str = "auto"):
     """
-    Load a fine-tuned PLLuM model.
+    Load a fine-tuned PLLuM model with LoRA adapters.
     
     Args:
         model_path: Path to the saved model
@@ -379,14 +376,14 @@ def load_fine_tuned_model(model_path: str, device: str = "auto"):
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    logger.info(f"Loading fine-tuned model from {model_path} on {device}")
-    
-    # Log CUDA memory before loading
-    if device == "cuda":
-        logger.info(f"CUDA memory before loading: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
+    print(f"Loading fine-tuned model from {model_path} on {device}")
     
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path)
+    
+    # For the base model, we'll use standard methods instead of Unsloth
+    # First load the base model with quantization
+    base_model_id = "CYFRAGOVPL/Llama-PLLuM-8B-instruct"  # Base model ID
     
     # Setup BitsAndBytes config for inference
     bnb_config = BitsAndBytesConfig(
@@ -394,17 +391,16 @@ def load_fine_tuned_model(model_path: str, device: str = "auto"):
         bnb_4bit_compute_dtype=torch.float16,
     )
     
-    # Load model with Unsloth optimizations for inference
-    model, _ = FastLanguageModel.from_pretrained(
-        model_path,
-        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-        device_map=device,
+    # Load the base model with quantization
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model_id,
         quantization_config=bnb_config if device == "cuda" else None,
+        device_map=device,
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
     )
     
-    # Log CUDA memory after loading
-    if device == "cuda":
-        logger.info(f"CUDA memory after loading: {torch.cuda.memory_allocated() / 1e9:.2f}GB allocated")
+    # Now load the LoRA adapter separately
+    model = PeftModel.from_pretrained(model, model_path)
     
     return model, tokenizer
 
